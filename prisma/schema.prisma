@@ -1,0 +1,917 @@
+// ========================================
+// Stride - Prisma Schema
+// ========================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  member
+  president
+  vice_president
+  secretary
+  treasurer
+  commissaire
+  executive
+  admin
+  owner
+}
+
+enum UserStatus {
+  pending
+  active
+  suspended
+  inactive
+}
+
+model Association {
+  id             String   @id @default(uuid())
+  name           String
+  type           String?
+  description    String?
+  city           String?
+  region         String?
+  estimatedMembers Int?
+  logo           String?
+  primaryColor   String?  @default("#667eea")
+  secondaryColor String?  @default("#764ba2")
+
+  // Configuration
+  currency              String?  @default("XAF")
+  contributionFrequency String?  @default("monthly")
+  baseContribution      Float?   @default(0)
+  firstMeetingDate      DateTime?
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  members              User[]
+  contributionSessions ContributionSession[]
+  distributionCycles   DistributionCycle[]
+  loans                Loan[]
+  savingsAccounts      SavingsAccount[]
+  investments          Investment[]
+  budgetPeriods        BudgetPeriod[]
+  events               Event[]
+
+  // Communication
+  announcements        Announcement[]
+  forumCategories      ForumCategory[]
+  forumPosts           ForumPost[]
+
+  // Sanctions & Documents
+  sanctions            Sanction[]
+  documents            Document[]
+
+  // Reports & Audit
+  reports              Report[]
+  auditLogs            AuditLog[]
+
+  // Notifications
+  notifications        Notification[]
+
+  @@map("associations")
+}
+
+model User {
+  id            String     @id @default(uuid())
+  email         String     @unique
+  password      String
+  firstName     String
+  lastName      String
+  phone         String?
+  role          UserRole   @default(member)
+  status        UserStatus @default(active)
+  joinDate      DateTime   @default(now())
+  avatarUrl     String?
+  mustChangePassword Boolean @default(false)
+  
+  associationId String
+  association   Association @relation(fields: [associationId], references: [id], onDelete: Cascade)
+
+  contributions    Contribution[]
+  distributions    Distribution[]
+  loans            Loan[]
+  loanRepayments   LoanRepayment[]
+  savingsAccounts  SavingsAccount[]
+  attendances      EventAttendance[]
+  authoredMinutes  MeetingMinutes[]   @relation("MinutesAuthor")
+  createdVotings   VotingSession[]    @relation("VotingCreator")
+  votes            Vote[]
+
+  // Communication
+  conversationParticipants ConversationParticipant[]
+  sentMessages             Message[]
+  announcements            Announcement[]        @relation("AnnouncementAuthor")
+  announcementComments     AnnouncementComment[]  @relation("CommentAuthor")
+  forumPosts               ForumPost[]           @relation("ForumPostAuthor")
+  forumReplies             ForumReply[]          @relation("ForumReplyAuthor")
+
+  // Sanctions & Documents
+  sanctionsReceived        Sanction[]            @relation("SanctionUser")
+  sanctionsCreated         Sanction[]            @relation("SanctionCreator")
+  uploadedDocuments        Document[]            @relation("DocumentUploader")
+
+  // Reports & Audit
+  generatedReports         Report[]              @relation("ReportGenerator")
+  auditLogs                AuditLog[]            @relation("AuditLogUser")
+
+  // Notifications
+  notifications            Notification[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
+// ========================================
+// Finance Models
+// ========================================
+
+// --- COTISATIONS ---
+
+enum ContributionStatus {
+  paid
+  unpaid
+  partial
+}
+
+model ContributionSession {
+  id              String   @id @default(uuid())
+  associationId   String
+  association     Association @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  month           Int      // 1-12
+  year            Int
+  status          String   @default("open") // open, closed
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  contributions   Contribution[]
+
+  @@unique([associationId, month, year])
+  @@map("contribution_sessions")
+}
+
+model Contribution {
+  id              String             @id @default(uuid())
+  sessionId       String
+  session         ContributionSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amountSavings   Float              @default(0) // Épargne
+  amountTontine   Float              @default(0) // Tontine
+  status          ContributionStatus @default(unpaid)
+  paidAt          DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@unique([sessionId, userId])
+  @@map("contributions")
+}
+
+// --- DISTRIBUTIONS (Tontine) ---
+
+enum DistributionStatus {
+  pending
+  distributed
+}
+
+model DistributionCycle {
+  id              String   @id @default(uuid())
+  associationId   String
+  association     Association @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  year            Int
+  algorithm       String   @default("round_robin") // round_robin, random, manual
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  distributions   Distribution[]
+
+  @@unique([associationId, year])
+  @@map("distribution_cycles")
+}
+
+model Distribution {
+  id              String             @id @default(uuid())
+  cycleId         String
+  cycle           DistributionCycle  @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  position        Int                // Ordre de passage (1, 2, 3...)
+  month           String             // "Janvier", "Février"...
+  amount          Float              @default(0)
+  status          DistributionStatus @default(pending)
+  distributedAt   DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@unique([cycleId, position])
+  @@unique([cycleId, userId])
+  @@map("distributions")
+}
+
+// --- PRÊTS ---
+
+enum LoanStatus {
+  pending
+  approved
+  active
+  completed
+  rejected
+}
+
+model Loan {
+  id              String     @id @default(uuid())
+  associationId   String
+  association     Association @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount          Float
+  interestRate    Float      @default(5)
+  durationMonths  Int        @default(12)
+  monthlyPayment  Float      @default(0)
+  remainingAmount Float      @default(0)
+  status          LoanStatus @default(pending)
+  requestDate     DateTime   @default(now())
+  approvalDate    DateTime?
+  dueDate         DateTime?
+  purpose         String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  repayments      LoanRepayment[]
+
+  @@map("loans")
+}
+
+model LoanRepayment {
+  id          String   @id @default(uuid())
+  loanId      String
+  loan        Loan     @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount      Float
+  paidAt      DateTime @default(now())
+  note        String?
+  createdAt   DateTime @default(now())
+
+  @@map("loan_repayments")
+}
+
+// --- ÉPARGNE ---
+
+enum SavingsAccountType {
+  epargne
+  terme
+  bloquee
+}
+
+enum SavingsAccountStatus {
+  active
+  matured
+  closed
+}
+
+model SavingsAccount {
+  id              String              @id @default(uuid())
+  associationId   String
+  association     Association         @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountType     SavingsAccountType  @default(epargne)
+  balance         Float               @default(0)
+  interestRate    Float               @default(3.5)
+  maturityDate    DateTime?
+  status          SavingsAccountStatus @default(active)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  transactions    SavingsTransaction[]
+
+  @@map("savings_accounts")
+}
+
+enum SavingsTransactionType {
+  deposit
+  withdrawal
+  interest
+}
+
+model SavingsTransaction {
+  id          String                 @id @default(uuid())
+  accountId   String
+  account     SavingsAccount         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  type        SavingsTransactionType
+  amount      Float
+  description String?
+  balanceAfter Float                 @default(0)
+  createdAt   DateTime               @default(now())
+
+  @@map("savings_transactions")
+}
+
+// --- INVESTISSEMENTS ---
+
+enum InvestmentRisk {
+  low
+  medium
+  high
+}
+
+enum InvestmentStatus {
+  active
+  closed
+  pending_val
+}
+
+model Investment {
+  id              String           @id @default(uuid())
+  associationId   String
+  association     Association      @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  name            String
+  type            String           // immobilier, actions, obligations, projet
+  initialAmount   Float
+  currentValue    Float
+  startDate       DateTime         @default(now())
+  durationMonths  Int              @default(12)
+  risk            InvestmentRisk   @default(medium)
+  status          InvestmentStatus @default(active)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  transactions    InvestmentTransaction[]
+
+  @@map("investments")
+}
+
+enum InvestmentTransactionType {
+  injection
+  dividend
+  liquidation
+}
+
+model InvestmentTransaction {
+  id            String                    @id @default(uuid())
+  investmentId  String
+  investment    Investment                @relation(fields: [investmentId], references: [id], onDelete: Cascade)
+  type          InvestmentTransactionType
+  amount        Float
+  label         String?
+  createdAt     DateTime                  @default(now())
+
+  @@map("investment_transactions")
+}
+
+// ========================================
+// Events & Assemblies Models
+// ========================================
+
+enum EventType {
+  assembly
+  meeting
+  deadline
+  holiday
+  other
+}
+
+enum EventStatus {
+  scheduled
+  in_progress
+  completed
+  cancelled
+}
+
+enum AttendanceStatus {
+  present
+  absent
+  excused
+}
+
+model Event {
+  id              String       @id @default(uuid())
+  associationId   String
+  association     Association  @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  title           String
+  type            EventType    @default(assembly)
+  description     String?
+  date            DateTime
+  startTime       String       // "14:00"
+  endTime         String?      // "17:00"
+  location        String?
+  status          EventStatus  @default(scheduled)
+  fineAmount      Float        @default(5000) // Amende absence
+  createdById     String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  attendances     EventAttendance[]
+  minutes         MeetingMinutes?
+
+  @@map("events")
+}
+
+model EventAttendance {
+  id          String           @id @default(uuid())
+  eventId     String
+  event       Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status      AttendanceStatus @default(present)
+  fineApplied Float            @default(0)
+  note        String?
+  markedAt    DateTime         @default(now())
+
+  @@unique([eventId, userId])
+  @@map("event_attendances")
+}
+
+// --- PV (Procès-Verbaux) ---
+
+enum MinutesStatus {
+  draft
+  review
+  approved
+  published
+}
+
+model MeetingMinutes {
+  id              String        @id @default(uuid())
+  eventId         String        @unique
+  event           Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  associationId   String
+  title           String
+  content         String?       // Contenu du PV (texte riche)
+  decisions       String?       // JSON array de décisions
+  actions         String?       // JSON array d'actions
+  status          MinutesStatus @default(draft)
+  authorId        String
+  author          User          @relation("MinutesAuthor", fields: [authorId], references: [id])
+  presentCount    Int           @default(0)
+  totalMembers    Int           @default(0)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@map("meeting_minutes")
+}
+
+// --- VOTES ---
+
+enum VotingType {
+  simple
+  qualified
+  anonymous
+}
+
+enum VotingStatus {
+  draft
+  active
+  completed
+}
+
+model VotingSession {
+  id                String       @id @default(uuid())
+  associationId     String
+  title             String
+  description       String?
+  type              VotingType   @default(simple)
+  status            VotingStatus @default(draft)
+  startDate         DateTime
+  endDate           DateTime
+  requiredQuorum    Int          @default(50)  // % de participation requis
+  requiredMajority  Int          @default(50)  // % pour adopter
+  createdById       String
+  createdBy         User         @relation("VotingCreator", fields: [createdById], references: [id])
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  options           VotingOption[]
+  votes             Vote[]
+
+  @@map("voting_sessions")
+}
+
+model VotingOption {
+  id          String        @id @default(uuid())
+  sessionId   String
+  session     VotingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  text        String
+  sortOrder   Int           @default(0)
+  createdAt   DateTime      @default(now())
+
+  votes       Vote[]
+
+  @@map("voting_options")
+}
+
+model Vote {
+  id          String        @id @default(uuid())
+  sessionId   String
+  session     VotingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  optionId    String
+  option      VotingOption  @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime      @default(now())
+
+  @@unique([sessionId, userId])
+  @@map("votes")
+}
+
+// ========================================
+// Communication Models
+// ========================================
+
+enum ConversationType {
+  individual
+  group
+}
+
+enum MessageStatus {
+  sent
+  delivered
+  read
+}
+
+model Conversation {
+  id              String           @id @default(uuid())
+  associationId   String
+  type            ConversationType @default(individual)
+  name            String?          // For group conversations
+  description     String?
+  createdById     String
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  participants    ConversationParticipant[]
+  messages        Message[]
+
+  @@map("conversations")
+}
+
+model ConversationParticipant {
+  id              String       @id @default(uuid())
+  conversationId  String
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt        DateTime     @default(now())
+  lastReadAt      DateTime     @default(now())
+
+  @@unique([conversationId, userId])
+  @@map("conversation_participants")
+}
+
+model Message {
+  id              String        @id @default(uuid())
+  conversationId  String
+  conversation    Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId        String
+  sender          User          @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  content         String
+  status          MessageStatus @default(sent)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@map("messages")
+}
+
+// --- ANNONCES ---
+
+enum AnnouncementType {
+  info
+  warning
+  success
+  urgent
+}
+
+enum AnnouncementPriority {
+  low
+  medium
+  high
+}
+
+model Announcement {
+  id              String               @id @default(uuid())
+  associationId   String
+  association     Association          @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  title           String
+  content         String
+  type            AnnouncementType     @default(info)
+  priority        AnnouncementPriority @default(medium)
+  targetAudience  String               @default("all") // all, bureau, members
+  authorId        String
+  author          User                 @relation("AnnouncementAuthor", fields: [authorId], references: [id])
+  publishAt       DateTime             @default(now())
+  views           Int                  @default(0)
+  likes           Int                  @default(0)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  comments        AnnouncementComment[]
+
+  @@map("announcements")
+}
+
+model AnnouncementComment {
+  id              String       @id @default(uuid())
+  announcementId  String
+  announcement    Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  authorId        String
+  author          User         @relation("CommentAuthor", fields: [authorId], references: [id])
+  content         String
+  createdAt       DateTime     @default(now())
+
+  @@map("announcement_comments")
+}
+
+// --- FORUM ---
+
+model ForumCategory {
+  id              String   @id @default(uuid())
+  associationId   String
+  association     Association @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  name            String
+  description     String?
+  icon            String?  @default("💬")
+  color           String?  @default("#2563eb")
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  posts           ForumPost[]
+
+  @@map("forum_categories")
+}
+
+model ForumPost {
+  id              String        @id @default(uuid())
+  associationId   String
+  association     Association   @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  categoryId      String
+  category        ForumCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  authorId        String
+  author          User          @relation("ForumPostAuthor", fields: [authorId], references: [id])
+  title           String
+  content         String
+  tags            String?       // JSON array
+  isPinned        Boolean       @default(false)
+  views           Int           @default(0)
+  likes           Int           @default(0)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  replies         ForumReply[]
+
+  @@map("forum_posts")
+}
+
+model ForumReply {
+  id          String    @id @default(uuid())
+  postId      String
+  post        ForumPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId    String
+  author      User      @relation("ForumReplyAuthor", fields: [authorId], references: [id])
+  content     String
+  likes       Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("forum_replies")
+}
+
+// ========================================
+// Sanctions & Documents Models
+// ========================================
+
+enum SanctionType {
+  retard_remboursement
+  absence_reunion
+  non_paiement_cotisation
+  faute_grave
+  autre
+}
+
+enum SanctionStatus {
+  en_attente
+  appliquee
+  payee
+  annulee
+}
+
+model Sanction {
+  id              String         @id @default(uuid())
+  associationId   String
+  association     Association    @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User           @relation("SanctionUser", fields: [userId], references: [id], onDelete: Cascade)
+  createdById     String
+  createdBy       User           @relation("SanctionCreator", fields: [createdById], references: [id])
+  type            SanctionType
+  reason          String
+  amount          Float          @default(0)
+  applicationDate DateTime       @default(now())
+  status          SanctionStatus @default(en_attente)
+  paidAt          DateTime?
+  cancelledAt     DateTime?
+  cancelReason    String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@map("sanctions")
+}
+
+enum DocumentCategory {
+  reglement
+  pv
+  attestation
+  rapport
+  statut
+  financier
+  autre
+}
+
+model Document {
+  id              String           @id @default(uuid())
+  associationId   String
+  association     Association      @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  uploadedById    String
+  uploadedBy      User             @relation("DocumentUploader", fields: [uploadedById], references: [id])
+  name            String
+  description     String?
+  category        DocumentCategory @default(autre)
+  fileUrl         String
+  fileType        String           // pdf, docx, xlsx, etc.
+  fileSize        Int              @default(0) // bytes
+  tags            String?          // JSON array
+  isPublic        Boolean          @default(true) // visible to all members
+  downloads       Int              @default(0)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@map("documents")
+}
+
+// --- RAPPORTS & AUDIT ---
+
+enum ReportType {
+  monthly
+  annual
+  contributions
+  loans
+  sanctions
+  members
+  custom
+}
+
+enum ReportFormat {
+  pdf
+  docx
+}
+
+model Report {
+  id              String       @id @default(uuid())
+  associationId   String
+  association     Association  @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  generatedById   String
+  generatedBy     User         @relation("ReportGenerator", fields: [generatedById], references: [id])
+  title           String
+  type            ReportType
+  format          ReportFormat @default(pdf)
+  period          String?      // e.g. "2026-01", "2025"
+  fileData        Bytes?       // stored binary
+  parameters      String?      // JSON params used
+  createdAt       DateTime     @default(now())
+
+  @@map("reports")
+}
+
+enum AuditAction {
+  LOGIN
+  LOGOUT
+  CREATE_MEMBER
+  UPDATE_MEMBER
+  DELETE_MEMBER
+  CREATE_CONTRIBUTION
+  APPROVE_LOAN
+  REJECT_LOAN
+  CREATE_SANCTION
+  UPDATE_SETTINGS
+  GENERATE_REPORT
+  OTHER
+}
+
+enum AuditSeverity {
+  low
+  medium
+  high
+  critical
+}
+
+model AuditLog {
+  id              String        @id @default(uuid())
+  associationId   String
+  association     Association   @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User          @relation("AuditLogUser", fields: [userId], references: [id])
+  action          AuditAction
+  resource        String
+  details         String?
+  ipAddress       String?
+  severity        AuditSeverity @default(low)
+  createdAt       DateTime      @default(now())
+
+  @@map("audit_logs")
+}
+
+// --- BUDGET ---
+
+enum BudgetPeriodStatus {
+  draft
+  active
+  closed
+}
+
+enum BudgetLineType {
+  income
+  expense
+}
+
+model BudgetPeriod {
+  id              String             @id @default(uuid())
+  associationId   String
+  association     Association        @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  name            String
+  status          BudgetPeriodStatus @default(draft)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  lines           BudgetLine[]
+
+  @@map("budget_periods")
+}
+
+model BudgetLine {
+  id          String         @id @default(uuid())
+  periodId    String
+  period      BudgetPeriod   @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  category    String
+  label       String
+  type        BudgetLineType
+  planned     Float          @default(0)
+  actual      Float          @default(0)
+  isLocked    Boolean        @default(false)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@map("budget_lines")
+}
+
+// ========================================
+// Notifications
+// ========================================
+
+enum NotificationType {
+  info
+  success
+  warning
+  error
+  loan
+  payment
+  assembly
+  forum
+  sanction
+  system
+}
+
+enum NotificationPriority {
+  low
+  medium
+  high
+}
+
+model Notification {
+  id          String               @id @default(uuid())
+  userId      String
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  associationId String
+  association Association          @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  type        NotificationType     @default(info)
+  priority    NotificationPriority @default(medium)
+  title       String
+  message     String
+  read        Boolean              @default(false)
+  actionUrl   String?
+  actionText  String?
+  metadata    Json?
+  createdAt   DateTime             @default(now())
+
+  @@index([userId, read])
+  @@index([associationId])
+  @@map("notifications")
+}
