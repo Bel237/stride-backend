@@ -212,13 +212,14 @@ router.post('/:id/attendance', async (req: AuthRequest, res: Response) => {
     const results = []
     for (const att of attendances) {
       const fineApplied = att.status === 'absent' ? event.fineAmount : 0
+      const attStatus = att.status as 'present' | 'absent' | 'excused'
       const result = await prisma.eventAttendance.upsert({
-        where: { eventId_userId: { eventId: event.id, userId: att.userId } },
-        update: { status: att.status, fineApplied, note: att.note },
+        where: { eventId_userId: { eventId: event.id, userId: att.userId as string } },
+        update: { status: attStatus, fineApplied, note: att.note },
         create: {
           eventId: event.id,
-          userId: att.userId,
-          status: att.status,
+          userId: att.userId as string,
+          status: attStatus,
           fineApplied,
           note: att.note
         }
@@ -246,13 +247,14 @@ router.put('/:id/attendance/:userId', async (req: AuthRequest, res: Response) =>
     }
 
     const fineApplied = status === 'absent' ? event.fineAmount : 0
+    const attendanceStatus = status as 'present' | 'absent' | 'excused'
     const attendance = await prisma.eventAttendance.upsert({
       where: { eventId_userId: { eventId: event.id, userId: req.params.userId as string } },
-      update: { status, fineApplied, note },
+      update: { status: attendanceStatus, fineApplied, note },
       create: {
         eventId: event.id,
         userId: req.params.userId as string,
-        status,
+        status: attendanceStatus,
         fineApplied,
         note
       }
