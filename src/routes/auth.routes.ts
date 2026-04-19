@@ -91,6 +91,7 @@ router.post('/register', async (req: Request, res: Response) => {
         }
       })
 
+      // Le propriétaire est automatiquement président de l'association
       const user = await tx.user.create({
         data: {
           email: data.email,
@@ -98,7 +99,7 @@ router.post('/register', async (req: Request, res: Response) => {
           firstName: data.firstName,
           lastName: data.lastName,
           phone: data.phone,
-          role: 'owner',
+          role: 'president', // Owner = President par défaut
           status: 'active',
           associationId: association.id
         },

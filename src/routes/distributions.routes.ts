@@ -181,7 +181,7 @@ router.put('/:id/distribute', authenticate, async (req: AuthRequest, res: Respon
     const { amount } = req.body
 
     const distribution = await prisma.distribution.update({
-      where: { id: req.params.id },
+      where: { id: String(req.params.id) },
       data: {
         amount: amount || 0,
         status: 'distributed',
