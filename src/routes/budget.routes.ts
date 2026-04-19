@@ -36,7 +36,7 @@ router.get('/periods', authenticate, async (req: AuthRequest, res: Response) => 
 router.get('/periods/:id', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const period = await prisma.budgetPeriod.findUnique({
-      where: { id: req.params.id },
+      where: { id: req.params.id as string },
       include: { lines: { orderBy: { type: 'asc' } } }
     })
 
@@ -93,7 +93,7 @@ router.post('/periods/:id/lines', authenticate, async (req: AuthRequest, res: Re
 
     const line = await prisma.budgetLine.create({
       data: {
-        periodId: req.params.id,
+        periodId: req.params.id as string,
         category,
         label,
         type,
@@ -125,7 +125,7 @@ router.put('/lines/:id', authenticate, async (req: AuthRequest, res: Response) =
     if (label) data.label = label
 
     const line = await prisma.budgetLine.update({
-      where: { id: req.params.id },
+      where: { id: req.params.id as string },
       data
     })
 
@@ -142,11 +142,11 @@ router.put('/lines/:id', authenticate, async (req: AuthRequest, res: Response) =
 // ==========================================
 router.delete('/lines/:id', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const line = await prisma.budgetLine.findUnique({ where: { id: req.params.id } })
+    const line = await prisma.budgetLine.findUnique({ where: { id: req.params.id as string } })
     if (!line) return res.status(404).json({ message: 'Ligne non trouvée' })
     if (line.isLocked) return res.status(400).json({ message: 'Cette ligne est verrouillée' })
 
-    await prisma.budgetLine.delete({ where: { id: req.params.id } })
+    await prisma.budgetLine.delete({ where: { id: req.params.id as string } })
     res.json({ message: 'Ligne supprimée' })
   } catch (error) {
     console.error('Delete budget line error:', error)

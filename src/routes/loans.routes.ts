@@ -43,7 +43,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
 router.get('/:id', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const loan = await prisma.loan.findUnique({
-      where: { id: req.params.id },
+      where: { id: req.params.id as string },
       include: {
         user: { select: { id: true, firstName: true, lastName: true, email: true } },
         repayments: {
@@ -112,7 +112,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
 // ==========================================
 router.put('/:id/approve', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const loan = await prisma.loan.findUnique({ where: { id: req.params.id } })
+    const loan = await prisma.loan.findUnique({ where: { id: req.params.id as string } })
     if (!loan) return res.status(404).json({ message: 'Prêt non trouvé' })
     if (loan.status !== 'pending') return res.status(400).json({ message: 'Ce prêt ne peut pas être approuvé' })
 
@@ -120,7 +120,7 @@ router.put('/:id/approve', authenticate, async (req: AuthRequest, res: Response)
     dueDate.setMonth(dueDate.getMonth() + loan.durationMonths)
 
     const updated = await prisma.loan.update({
-      where: { id: req.params.id },
+      where: { id: req.params.id as string },
       data: {
         status: 'active',
         approvalDate: new Date(),
@@ -143,7 +143,7 @@ router.put('/:id/approve', authenticate, async (req: AuthRequest, res: Response)
 router.put('/:id/reject', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const updated = await prisma.loan.update({
-      where: { id: req.params.id },
+      where: { id: req.params.id as string },
       data: { status: 'rejected' },
       include: { user: { select: { id: true, firstName: true, lastName: true } } }
     })
@@ -162,9 +162,9 @@ router.put('/:id/reject', authenticate, async (req: AuthRequest, res: Response) 
 router.post('/:id/repay', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { amount, note } = req.body
-    const loanId = req.params.id
+    const loanId = req.params.id as string
 
-    const loan = await prisma.loan.findUnique({ where: { id: loanId } })
+    const loan = await prisma.loan.findUnique({ where: { id: loanId as string } })
     if (!loan) return res.status(404).json({ message: 'Prêt non trouvé' })
     if (loan.status !== 'active') return res.status(400).json({ message: 'Ce prêt n\'est pas actif' })
 
@@ -181,7 +181,7 @@ router.post('/:id/repay', authenticate, async (req: AuthRequest, res: Response) 
         }
       }),
       prisma.loan.update({
-        where: { id: loanId },
+        where: { id: loanId as string },
         data: {
           remainingAmount: newRemaining,
           status: isCompleted ? 'completed' : 'active'

@@ -44,7 +44,7 @@ router.get('/accounts', authenticate, async (req: AuthRequest, res: Response) =>
 router.get('/accounts/:id', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const account = await prisma.savingsAccount.findUnique({
-      where: { id: req.params.id },
+      where: { id: req.params.id as string },
       include: {
         user: { select: { id: true, firstName: true, lastName: true, email: true } },
         transactions: { orderBy: { createdAt: 'desc' } }
@@ -111,13 +111,13 @@ router.post('/accounts', authenticate, async (req: AuthRequest, res: Response) =
 router.post('/accounts/:id/deposit', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { amount, description } = req.body
-    const accountId = req.params.id
+    const accountId = req.params.id as string
 
     if (!amount || amount <= 0) {
       return res.status(400).json({ message: 'Montant invalide' })
     }
 
-    const account = await prisma.savingsAccount.findUnique({ where: { id: accountId } })
+    const account = await prisma.savingsAccount.findUnique({ where: { id: accountId as string } })
     if (!account) return res.status(404).json({ message: 'Compte non trouvé' })
 
     const newBalance = account.balance + amount
@@ -125,7 +125,7 @@ router.post('/accounts/:id/deposit', authenticate, async (req: AuthRequest, res:
     const [transaction] = await prisma.$transaction([
       prisma.savingsTransaction.create({
         data: {
-          accountId,
+          accountId: accountId as string,
           type: 'deposit',
           amount,
           description: description || 'Dépôt',
@@ -133,7 +133,7 @@ router.post('/accounts/:id/deposit', authenticate, async (req: AuthRequest, res:
         }
       }),
       prisma.savingsAccount.update({
-        where: { id: accountId },
+        where: { id: accountId as string },
         data: { balance: newBalance }
       })
     ])
@@ -152,13 +152,13 @@ router.post('/accounts/:id/deposit', authenticate, async (req: AuthRequest, res:
 router.post('/accounts/:id/withdraw', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { amount, description } = req.body
-    const accountId = req.params.id
+    const accountId = req.params.id as string
 
     if (!amount || amount <= 0) {
       return res.status(400).json({ message: 'Montant invalide' })
     }
 
-    const account = await prisma.savingsAccount.findUnique({ where: { id: accountId } })
+    const account = await prisma.savingsAccount.findUnique({ where: { id: accountId as string } })
     if (!account) return res.status(404).json({ message: 'Compte non trouvé' })
     if (account.balance < amount) return res.status(400).json({ message: 'Solde insuffisant' })
 
@@ -167,7 +167,7 @@ router.post('/accounts/:id/withdraw', authenticate, async (req: AuthRequest, res
     const [transaction] = await prisma.$transaction([
       prisma.savingsTransaction.create({
         data: {
-          accountId,
+          accountId: accountId as string,
           type: 'withdrawal',
           amount,
           description: description || 'Retrait',
@@ -175,7 +175,7 @@ router.post('/accounts/:id/withdraw', authenticate, async (req: AuthRequest, res
         }
       }),
       prisma.savingsAccount.update({
-        where: { id: accountId },
+        where: { id: accountId as string },
         data: { balance: newBalance }
       })
     ])

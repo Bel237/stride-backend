@@ -38,7 +38,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
 router.get('/:id', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const investment = await prisma.investment.findUnique({
-      where: { id: req.params.id },
+      where: { id: req.params.id as string },
       include: {
         transactions: { orderBy: { createdAt: 'desc' } }
       }
@@ -109,7 +109,7 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
     if (status) data.status = status
 
     const investment = await prisma.investment.update({
-      where: { id: req.params.id },
+      where: { id: req.params.id as string },
       data,
       include: { transactions: { orderBy: { createdAt: 'desc' }, take: 5 } }
     })
@@ -128,13 +128,13 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
 router.post('/:id/transactions', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { type, amount, label } = req.body
-    const investmentId = req.params.id
+    const investmentId = req.params.id as string
 
     if (!type || !amount) {
       return res.status(400).json({ message: 'type et amount sont requis' })
     }
 
-    const investment = await prisma.investment.findUnique({ where: { id: investmentId } })
+    const investment = await prisma.investment.findUnique({ where: { id: investmentId as string } })
     if (!investment) return res.status(404).json({ message: 'Investissement non trouvé' })
 
     // Mettre à jour la valeur courante
@@ -145,10 +145,10 @@ router.post('/:id/transactions', authenticate, async (req: AuthRequest, res: Res
 
     const [transaction] = await prisma.$transaction([
       prisma.investmentTransaction.create({
-        data: { investmentId, type, amount, label }
+        data: { investmentId: investmentId as string, type, amount, label }
       }),
       prisma.investment.update({
-        where: { id: investmentId },
+        where: { id: investmentId as string },
         data: { currentValue: Math.max(0, newValue) }
       })
     ])

@@ -1,4 +1,4 @@
-import { Router } from 'express'
+import { Router, Response } from 'express'
 import prisma from '../lib/prisma'
 import { authenticate, AuthRequest } from '../middleware/auth.middleware'
 
@@ -6,7 +6,7 @@ const router = Router()
 router.use(authenticate)
 
 // GET /api/events - List events (with optional filters)
-router.get('/', async (req: AuthRequest, res) => {
+router.get('/', async (req: AuthRequest, res: Response) => {
   try {
     const { type, status, month, year } = req.query
     const where: any = { associationId: req.user!.associationId }
@@ -43,7 +43,7 @@ router.get('/', async (req: AuthRequest, res) => {
 })
 
 // GET /api/events/upcoming - Upcoming events
-router.get('/upcoming', async (req: AuthRequest, res) => {
+router.get('/upcoming', async (req: AuthRequest, res: Response) => {
   try {
     const events = await prisma.event.findMany({
       where: {
@@ -64,7 +64,7 @@ router.get('/upcoming', async (req: AuthRequest, res) => {
 })
 
 // GET /api/events/stats - Event statistics
-router.get('/stats', async (req: AuthRequest, res) => {
+router.get('/stats', async (req: AuthRequest, res: Response) => {
   try {
     const assocId = req.user!.associationId
     const [total, scheduled, completed, cancelled] = await Promise.all([
@@ -80,10 +80,10 @@ router.get('/stats', async (req: AuthRequest, res) => {
 })
 
 // GET /api/events/:id - Event detail with attendances
-router.get('/:id', async (req: AuthRequest, res) => {
+router.get('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const event = await prisma.event.findFirst({
-      where: { id: req.params.id, associationId: req.user!.associationId },
+      where: { id: req.params.id as string, associationId: req.user!.associationId },
       include: {
         attendances: {
           include: { user: { select: { id: true, firstName: true, lastName: true, email: true, role: true } } }
@@ -99,7 +99,7 @@ router.get('/:id', async (req: AuthRequest, res) => {
 })
 
 // POST /api/events - Create event
-router.post('/', async (req: AuthRequest, res) => {
+router.post('/', async (req: AuthRequest, res: Response) => {
   try {
     const { title, type, description, date, startTime, endTime, location, fineAmount } = req.body
     if (!title || !date || !startTime) {
@@ -127,16 +127,16 @@ router.post('/', async (req: AuthRequest, res) => {
 })
 
 // PUT /api/events/:id - Update event
-router.put('/:id', async (req: AuthRequest, res) => {
+router.put('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const existing = await prisma.event.findFirst({
-      where: { id: req.params.id, associationId: req.user!.associationId }
+      where: { id: req.params.id as string, associationId: req.user!.associationId }
     })
     if (!existing) return res.status(404).json({ message: 'Événement non trouvé' })
 
     const { title, type, description, date, startTime, endTime, location, status, fineAmount } = req.body
     const event = await prisma.event.update({
-      where: { id: req.params.id },
+      where: { id: req.params.id as string },
       data: {
         ...(title && { title }),
         ...(type && { type }),
@@ -156,19 +156,19 @@ router.put('/:id', async (req: AuthRequest, res) => {
 })
 
 // PUT /api/events/:id/status - Change event status (start, complete, cancel)
-router.put('/:id/status', async (req: AuthRequest, res) => {
+router.put('/:id/status', async (req: AuthRequest, res: Response) => {
   try {
     const { status } = req.body
     if (!['scheduled', 'in_progress', 'completed', 'cancelled'].includes(status)) {
       return res.status(400).json({ message: 'Statut invalide' })
     }
     const existing = await prisma.event.findFirst({
-      where: { id: req.params.id, associationId: req.user!.associationId }
+      where: { id: req.params.id as string, associationId: req.user!.associationId }
     })
     if (!existing) return res.status(404).json({ message: 'Événement non trouvé' })
 
     const event = await prisma.event.update({
-      where: { id: req.params.id },
+      where: { id: req.params.id as string },
       data: { status }
     })
     res.json(event)
@@ -178,14 +178,14 @@ router.put('/:id/status', async (req: AuthRequest, res) => {
 })
 
 // DELETE /api/events/:id
-router.delete('/:id', async (req: AuthRequest, res) => {
+router.delete('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const existing = await prisma.event.findFirst({
-      where: { id: req.params.id, associationId: req.user!.associationId }
+      where: { id: req.params.id as string, associationId: req.user!.associationId }
     })
     if (!existing) return res.status(404).json({ message: 'Événement non trouvé' })
 
-    await prisma.event.delete({ where: { id: req.params.id } })
+    await prisma.event.delete({ where: { id: req.params.id as string } })
     res.json({ message: 'Événement supprimé' })
   } catch (error: any) {
     res.status(500).json({ message: error.message })
@@ -197,10 +197,10 @@ router.delete('/:id', async (req: AuthRequest, res) => {
 // ========================================
 
 // POST /api/events/:id/attendance - Mark attendance (bulk)
-router.post('/:id/attendance', async (req: AuthRequest, res) => {
+router.post('/:id/attendance', async (req: AuthRequest, res: Response) => {
   try {
     const event = await prisma.event.findFirst({
-      where: { id: req.params.id, associationId: req.user!.associationId }
+      where: { id: req.params.id as string, associationId: req.user!.associationId }
     })
     if (!event) return res.status(404).json({ message: 'Événement non trouvé' })
 
@@ -233,25 +233,25 @@ router.post('/:id/attendance', async (req: AuthRequest, res) => {
 })
 
 // PUT /api/events/:id/attendance/:userId - Toggle single attendance
-router.put('/:id/attendance/:userId', async (req: AuthRequest, res) => {
+router.put('/:id/attendance/:userId', async (req: AuthRequest, res: Response) => {
   try {
     const event = await prisma.event.findFirst({
-      where: { id: req.params.id, associationId: req.user!.associationId }
+      where: { id: req.params.id as string, associationId: req.user!.associationId }
     })
     if (!event) return res.status(404).json({ message: 'Événement non trouvé' })
 
-    const { status, note } = req.body
+    const { status, note } = req.body as { status: string, note?: string }
     if (!['present', 'absent', 'excused'].includes(status)) {
       return res.status(400).json({ message: 'Statut invalide' })
     }
 
     const fineApplied = status === 'absent' ? event.fineAmount : 0
     const attendance = await prisma.eventAttendance.upsert({
-      where: { eventId_userId: { eventId: event.id, userId: req.params.userId } },
+      where: { eventId_userId: { eventId: event.id, userId: req.params.userId as string } },
       update: { status, fineApplied, note },
       create: {
         eventId: event.id,
-        userId: req.params.userId,
+        userId: req.params.userId as string,
         status,
         fineApplied,
         note
@@ -264,7 +264,7 @@ router.put('/:id/attendance/:userId', async (req: AuthRequest, res) => {
 })
 
 // GET /api/events/member/attendance - Get current user's attendance history
-router.get('/member/attendance', async (req: AuthRequest, res) => {
+router.get('/member/attendance', async (req: AuthRequest, res: Response) => {
   try {
     const attendances = await prisma.eventAttendance.findMany({
       where: { userId: req.user!.id },
